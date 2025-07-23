@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compartilhamento de Localização</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        #map { height: 400px; }
+        .loading-spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid #3b82f6;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="text-center mb-8">
+            <img src="https://placehold.co/800x200" alt="Ícone de mapa digital estilizado com pontos de localização em azul" class="mx-auto rounded-lg shadow-lg mb-4" />
+            <h1 class="text-3xl font-bold text-gray-800">Compartilhamento de Localização</h1>
+            <p class="text-gray-600 mt-2">Este site mostra sua localização atual para fins de compartilhamento de posição.</p>
+        </header>
+
+        <main class="bg-white rounded-xl shadow-md p-6 max-w-4xl mx-auto">
+            <section id="location-section" class="mb-8">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold text-gray-700">Sua Localização</h2>
+                    <div id="status-indicator" class="flex items-center">
+                        <span class="text-sm font-medium">Carregando...</span>
+                        <div class="loading-spinner ml-2"></div>
+                    </div>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="space-y-4">
+                        <div class="bg-gray-100 p-4 rounded-lg">
+                            <h3 class="font-medium text-gray-700">Coordenadas</h3>
+                            <div id="coordinates" class="text-gray-600 mt-2">Buscando sua posição...</div>
+                        </div>
+
+                        <div class="bg-gray-100 p-4 rounded-lg">
+                            <h3 class="font-medium text-gray-700">Endereço aproximado</h3>
+                            <div id="address" class="text-gray-600 mt-2">Identificando endereço...</div>
+                        </div>
+
+                        <div class="bg-gray-100 p-4 rounded-lg">
+                            <h3 class="font-medium text-gray-700">Data/Hora</h3>
+                            <div id="timestamp" class="text-gray-600 mt-2">-</div>
+                        </div>
+                    </div>
+
+                    <div class="h-full">
+                        <div id="map" class="rounded-lg overflow-hidden border border-gray-200"></div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="text-center">
+                <p class="text-sm text-gray-500">
+                    Sua localização só é acessada com sua permissão. Nós não armazenamos nenhum dado.
+                </p>
+            </section>
+        </main>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        let map;
+        let marker;
+        const statusIndicator = document.getElementById('status-indicator');
+        const coordinatesElement = document.getElementById('coordinates');
+        const addressElement = document.getElementById('address');
+        const timestampElement = document.getElementById('timestamp');
+
+        function initMap(lat, lng) {
+            map = L.map('map').setView([lat, lng], 15);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            marker = L.marker([lat, lng]).addTo(map)
+                .bindPopup('Você está aqui')
+                .openPopup();
+        }
+
+        async function getAddress(lat, lng) {
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+                const data = await response.json();
+
+                if (data.address) {
+                    const address = [];
+                    if (data.address.road) address.push(data.address.road);
+                    if (data.address.suburb) address.push(data.address.suburb);
+                    if (data.address.city) address.push(data.address.city);
+                    if (data.address.state) address.push(data.address.state);
+                    if (data.address.country) address.push(data.address.country);
+
+                    return address.join(', ');
+                }
+                return "Endereço não disponível";
+            } catch (error) {
+                console.error("Erro ao obter endereço:", error);
+                return "Erro ao carregar endereço";
+            }
+        }
+
+        async function updateLocationUI(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+            const timestamp = new Date(position.timestamp).toLocaleString();
+
+            coordinatesElement.innerHTML = `
+                Latitude: ${lat.toFixed(6)}<br>
+                Longitude: ${lng.toFixed(6)}<br>
+                Precisão: ~${Math.round(accuracy)} metros
+            `;
+
+            if (!map) {
+                initMap(lat, lng);
+            } else {
+                map.setView([lat, lng], 15);
+                marker.setLatLng([lat, lng]);
+            }
+
+            const address = await getAddress(lat, lng);
+            addressElement.textContent = address;
+
+            timestampElement.textContent = timestamp;
+
+            statusIndicator.innerHTML = `
+                <span class="text-green-600 text-sm font-medium">Localização encontrada</span>
+                <svg class="w-5 h-5 ml-2 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
+                </svg>
+            `;
+        }
+
+        function handleLocationError(error) {
+            let errorMessage = "Erro desconhecido";
+
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    errorMessage = "Permissão para acessar a localização foi negada.";
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    errorMessage = "Informações de localização não estão disponíveis.";
+                    break;
+                case error.TIMEOUT:
+                    errorMessage = "A requisição para obter a localização expirou.";
+                    break;
+            }
+
+            statusIndicator.innerHTML = `
+                <span class="text-red-600 text-sm font-medium">${errorMessage}</span>
+                <svg class="w-5 h-5 ml-2 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+            `;
+
+            coordinatesElement.innerHTML = errorMessage;
+            addressElement.textContent = "-";
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    updateLocationUI,
+                    handleLocationError,
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 5000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                coordinatesElement.textContent = "Geolocalização não é suportada por este navegador.";
+                statusIndicator.innerHTML = `
+                    <span class="text-red-600 text-sm font-medium">Navegador não suportado</span>
+                    <svg class="w-5 h-5 ml-2 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                    </svg>
+                `;
+            }
+        });
+    </script>
+</body>
+</html>
